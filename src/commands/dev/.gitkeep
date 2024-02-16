@@ -1,0 +1,44 @@
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { resetErrors, resetWarnings } = require('../../handlers/loggingHandler');
+require('dotenv').config();
+
+module.exports = {
+	data: new SlashCommandBuilder()
+		.setName('dev')
+		.setDescription('dev Einstellungen')
+		.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+		.addSubcommand(subcommand =>
+			subcommand
+				.setName('reseterrors')
+
+				.setDescription('Setzt die Anzahl der Fehler zurück')
+		)
+		.addSubcommand(subcommand =>
+			subcommand
+				.setName('resetwarnings')
+				.setDescription('Setzt die Anzahl der Warnungen zurück')
+		),
+	async execute(interaction) {
+
+		const guildId = interaction.guild.id;
+		const memberId = interaction.member.id;
+
+		const devGuilds = process.env.DEV_GUILD;
+		const devMembers = process.env.DEV_MEMBERS;
+
+		if (!devGuilds === guildId && !devMembers.includes(memberId)) {
+			return interaction.reply({ content: 'Du bist nicht berechtigt, diesen Befehl zu verwenden!!' , ephemeral: true });
+		}
+
+		const subcommand = interaction.options.getSubcommand();
+		if (subcommand === 'reseterrors') {
+			resetErrors(interaction.member.user.globalName);
+			return interaction.reply({ content: 'Fehler wurden zurückgesetzt', ephemeral: true });
+			
+
+		} else if (subcommand === 'resetwarnings') {
+			resetWarnings(interaction.member.user.globalName);
+			return interaction.reply({ content: 'Warnungen wurden zurückgesetzt', ephemeral: true });
+		}
+	},
+};

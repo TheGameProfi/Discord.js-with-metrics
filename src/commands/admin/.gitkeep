@@ -1,0 +1,209 @@
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const Config = require('../../schema/config');
+
+module.exports = {
+	data: new SlashCommandBuilder()
+		.setName('admin')
+		.setDescription('Admin Einstellungen')
+		.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+		.addSubcommand(subcommand =>
+			subcommand
+				.setName('setnotification')
+
+				.setDescription('Stellt den Kanal für die Level Benachrichtigungen ein')
+				.addChannelOption(option =>
+					option
+						.setName('channel')
+						.setDescription('Der Kanal, in dem die Benachrichtigungen gesendet werden sollen')
+						.addChannelTypes(ChannelType.GuildText)
+						.setRequired(true)
+				)
+		)
+		.addSubcommand(subcommand =>
+			subcommand
+				.setName('setlevelxp')
+				.setDescription('Stellt die XP ein, die benötigt werden, um ein Level zu erreichen')
+				.addIntegerOption(option =>
+					option
+						.setName('level')
+						.setDescription('Das Level, für das die XP eingestellt werden sollen')
+						.setRequired(true)
+				)
+				.addIntegerOption(option =>
+					option
+						.setName('xp')
+						.setDescription('Die benötigten XP')
+						.setRequired(true)
+				)
+		)
+		.addSubcommand(subcommand =>
+			subcommand
+				.setName('setrewardrole')
+				.setDescription('Stellt die Rolle ein, die für das erreichen eines Levels vergeben wird')
+				.addIntegerOption(option =>
+					option
+						.setName('level')
+						.setDescription('Das Level, für das die XP eingestellt werden sollen')
+						.setRequired(true)
+				)
+				.addRoleOption(option =>
+					option
+						.setName('role')
+						.setDescription('Die Rolle, die vergeben werden soll')
+						.setRequired(true)
+				)
+		)
+		.addSubcommand(subcommand =>
+			subcommand
+				.setName('setxpcooldown')
+				.setDescription('Stellt die Abklingzeit für das erhalten von XP ein')
+				.addIntegerOption(option =>
+					option
+						.setName('cooldown')
+						.setDescription('Die Abklingzeit in Sekunden')
+						.setRequired(true)
+				)
+		),
+	async execute(interaction) {
+		const subcommand = interaction.options.getSubcommand();
+		if (subcommand === 'setnotification') {
+
+			if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+				return await interaction.reply({ content: 'Du hast nicht die nötigen Berechtigungen, um diesen Befehl auszuführen', ephemeral: true });
+			}
+			const channel = interaction.options.getChannel('channel');
+			if (!channel.type === 'GUILD_TEXT') {
+				return await interaction.reply({ content: 'Der Kanal muss ein Textkanal sein', ephemeral: true });
+			}
+
+			const query = { guildId: interaction.guild.id };
+
+			const config = await Config.findOne(query);
+			if (config) {
+				config.notificationChannelId = channel.id;
+				await config.save();
+
+			} else {
+				const newConfig = new Config({
+					guildId: interaction.guild.id,
+					notificationChannelId: channel.id,
+				});
+				await newConfig.save();
+			}
+			await interaction.reply({ content: 'Benachrichtigungen werden nun in <#' + channel + '> gesendet', ephemeral: true });
+
+		} else if (subcommand === 'setxpcooldown') {
+			if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+				return await interaction.reply({ content: 'Du hast nicht die nötigen Berechtigungen, um diesen Befehl auszuführen', ephemeral: true });
+			}
+			const cooldown = interaction.options.getInteger('cooldown');
+			if (cooldown < 5) {
+				return await interaction.reply({ content: 'Die Abklingzeit muss mindestens 5 Sekunden betragen', ephemeral: true });
+			}
+			const query = { guildId: interaction.guild.id };
+
+			const config = await Config.findOne(query);
+			if (config) {
+				config.xpCooldown = cooldown;
+				await config.save();
+
+			} else {
+				const newConfig = new Config({
+					guildId: interaction.guild.id,
+					xpCooldown: cooldown,
+				});
+				await newConfig.save();
+			}
+			await interaction.reply({ content: 'Die Abklingzeit beträgt nun ' + cooldown + ' Sekunden', ephemeral: true });
+		} else if (subcommand === 'setlevelxp') {
+
+			const xpConfig = require('../../schema/xp');
+
+			if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+				return await interaction.reply({ content: 'Du hast nicht die nötigen Berechtigungen, um diesen Befehl auszuführen', ephemeral: true });
+			}
+			const level = interaction.options.getInteger('level');
+			const xp = interaction.options.getInteger('xp');
+			if (level < 1 || xp < 1) {
+				return await interaction.reply({ content: 'Level und XP müssen mindestens 1 betragen', ephemeral: true });
+			}
+
+			const query = { guildId: interaction.guild.id };
+
+			const xpExistingConfig = await xpConfig.findOne(query);
+			
+			if (xpExistingConfig) {
+				const levelExists = xpExistingConfig.levels.find(lvl => lvl.level === level);
+				if (levelExists) {
+					await xpConfig.updateOne(
+						{
+							guildId: interaction.guild.id,
+							levels: { $elemMatch: { level: level } }
+						},
+						{ $set: { "levels.$.xpRequired": xp } }
+					)
+				} else {
+					await xpConfig.updateOne(
+						{ guildId: interaction.guild.id },
+						{
+							$push: {
+								levels:
+									{ level: level, xpRequired: xp }
+							}
+						}
+					)
+				}
+			}else {
+				const newXpConfig = new xpConfig({
+					guildId: interaction.guild.id,
+					levels: [{ level: level, xpRequired: xp }],
+				});
+				await newXpConfig.save();
+			}
+			await interaction.reply({ content: 'Level ' + level + ' benötigt nun ' + xp + ' XP', ephemeral: true });
+
+		}else if (subcommand == 'setrewardrole') {
+			const xpConfig = require('../../schema/xp');
+
+			if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+				return await interaction.reply({ content: 'Du hast nicht die nötigen Berechtigungen, um diesen Befehl auszuführen', ephemeral: true });
+			}
+			const role = interaction.options.getRole('role').id;
+			const level = interaction.options.getInteger('level');
+
+			const query = { guildId: interaction.guild.id };
+
+			const xpExistingConfig = await xpConfig.findOne(query);
+			
+			if (xpExistingConfig) {
+				const levelExists = xpExistingConfig.levels.find(lvl => lvl.level === level);
+				if (levelExists) {
+					await xpConfig.updateOne(
+						{
+							guildId: interaction.guild.id,
+							levels: { $elemMatch: { level: level } }
+						},
+						{ $set: { "levels.$.role": role } }
+					)
+				} else {
+					await xpConfig.updateOne(
+						{ guildId: interaction.guild.id },
+						{
+							$push: {
+								levels:
+									{ level: level, role: role }
+							}
+						}
+					)
+				}
+			}else {
+				const newXpConfig = new xpConfig({
+					guildId: interaction.guild.id,
+					levels: [{ level: level, role: role }],
+				});
+				await newXpConfig.save();
+			}
+			await interaction.reply({ content: 'Rolle <@&' + role + '> wird nun vergeben, wenn Level' + level + ' erreicht wird', ephemeral: true });
+		}
+	},
+};
